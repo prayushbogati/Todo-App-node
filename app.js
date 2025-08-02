@@ -2,6 +2,9 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const date = require("./date");
+const mongoose = require("mongoose");
+const _ = require("lodash");
+const { name } = require("ejs");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -12,13 +15,35 @@ app.set("view engine", "ejs");
 
 const port = 3000;
 
-let items = [];
-let jobs = [];
+mongoose.connect("mongodb://localhost:27017/todoListDB");
 
-app.get("/", (req, res) => {
-    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-   
+const todoSchema = mongoose.Schema({
+    name: String
+})
+const Todo = mongoose.model("Todo", todoSchema);
 
+
+const list1 = new Todo({
+    name: "Task1"
+})
+const list2 = new Todo({
+    name: "Task2"
+})
+const list3 = new Todo({
+    name: "Task3"
+})
+const defaultItems = [list1, list2, list3];
+// List.insertMany(defaultItems)
+
+
+const listSchema = mongoose.Schema({
+    name: String,
+    items: [todoSchema]
+})
+const List = mongoose.model("List", listSchema);
+
+app.get("/", async (req, res) => {
+    // const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     // day = days[day];
 
     // let dayType;
@@ -63,30 +88,64 @@ app.get("/", (req, res) => {
     //     default:
     //         console.log("Error! Current day is ", day);
     // }
-    res.render("day", { title: day, newItems: items });
-})
- 
-app.get("/work", (req, res) => {
-    this.title = "Work";
-    res.render("day", { title: this.title, newItems: jobs });
+    const todoItems = await Todo.find({});
+    res.render("day", { title: "Day", newItems: todoItems });
 })
 
-app.post("/work", (req, res) => {
-    let job = req.body.newItem;
-    jobs.push(job);
-    res.redirect("/work");
-})
-
-app.post("/", (req, res) => {
-    let item = req.body.newItem;
-    if (req.body.button === "Work") {
-        jobs.push(item);
-        res.redirect("/work");
+app.get("/:customlist", async (req, res) => {
+    const customList = _.capitalize(req.params.customlist);
+    const newListItems = await List.findOne({ name: customList });
+    if (newListItems) {
+        res.render("day", { title: newListItems.name, newItems: newListItems.items });
     }
     else {
-        items.push(item);
-        res.redirect("/");
+        const list = new List({
+            name: customList,
+            items: []
+        })
+        list.save();
+        res.redirect("/" + customList);
+    };
+})
+
+// app.post("/work", (req, res) => {
+//     let job = req.body.newItem;
+//     jobs.push(job);
+//     res.redirect("/work");
+// })
+
+app.post("/", async (req, res) => {
+    const itemName = req.body.newItem;
+    const listName = req.body.list;
+
+    const item = new Todo({
+        name: itemName
+    })
+    if (listName === "Day") {
+        item.save();
+        res.redirect('/');
     }
+    else {
+        const foundList = await List.findOne({ name: listName });
+        foundList.items.push(item);
+        foundList.save();
+        res.redirect('/' + listName);
+    }
+})
+
+app.post("/delete", async (req, res) => {
+    const checkedID = req.body.checkbox;
+    const listName = req.body.listName;
+
+    if (listName === "Day") {
+        await Todo.findByIdAndDelete(checkedID);
+        res.redirect('/');
+    }
+    else {
+        await List.findOneAndUpdate({ name: listName }, { $pull: { items: { _id: checkedID } } });
+        res.redirect('/' + listName);
+    }
+
 })
 
 app.listen(port, () => {
